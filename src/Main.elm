@@ -6,8 +6,10 @@ import Html.Attributes exposing (style)
 import Html.Events exposing (onClick)
 import Html.Keyed as Keyed
 import Othello.Board exposing (Board)
-import Othello.Game exposing (Cell(..), Game, InteractiveCell(..), Scores, State(..), UpdateGame)
+import Othello.Cell exposing (Cell(..), InteractiveCell(..))
+import Othello.Game exposing (Game, State(..), UpdateGame)
 import Othello.Player exposing (..)
+import Othello.Scores as Scores exposing (Scores)
 import StaticArray exposing (StaticArray)
 
 
@@ -29,12 +31,12 @@ update fn _ =
 
 cellSize : String
 cellSize =
-    "80px"
+    "64px"
 
 
 contentsSize : String
 contentsSize =
-    "60px"
+    "48px"
 
 
 basicCellView : (a -> Html UpdateGame) -> a -> Html UpdateGame
@@ -43,9 +45,13 @@ basicCellView contentsView contents =
         [ style "width" cellSize
         , style "height" cellSize
         , style "display" "inline-block"
-        , style "border" "solid 1px black"
-        , style "background-color" "green"
-        , style "margin" "4px"
+        , style "border-top" "solid 1px #131"
+        , style "border-left" "solid 1px #131"
+        , style "border-right" "solid 1px #353"
+        , style "border-bottom" "solid 1px #353"
+        , style "background-color" "#060"
+        , style "margin-right" "1px"
+        , style "margin-bottom" "1px"
         , style "padding" "8px"
         , style "font-size" "36px"
         , style "text-align" "center"
@@ -55,13 +61,14 @@ basicCellView contentsView contents =
         ]
 
 
+tileView : String -> Maybe msg -> Html msg
 tileView color clickMaybe =
     div
         (List.concat
             [ clickMaybe |> Maybe.map (onClick >> List.singleton) |> Maybe.withDefault []
             , [ style "width" "100%"
               , style "height" "100%"
-              , style "border-radius" "40px"
+              , style "border-radius" "50%"
               , style "background-color" color
               ]
             ]
@@ -92,7 +99,7 @@ cellView =
     basicCellView cellContentsView
 
 
-interactiveCellView : InteractiveCell -> Html UpdateGame
+interactiveCellView : InteractiveCell Game -> Html UpdateGame
 interactiveCellView =
     let
         interactiveCellContentsView interactiveCell =
@@ -146,10 +153,10 @@ playerName player =
 
 
 scoresView : Scores -> Html UpdateGame
-scoresView { player1, player2 } =
+scoresView scores =
     div []
-        [ div [] [ [ "Player One:", String.fromInt player1 ] |> String.join "" |> text ]
-        , div [] [ [ "Player Two:", String.fromInt player2 ] |> String.join "" |> text ]
+        [ div [] [ [ "Player One:", String.fromInt <| Scores.player1 scores ] |> String.join "" |> text ]
+        , div [] [ [ "Player Two:", String.fromInt <| Scores.player2 scores ] |> String.join "" |> text ]
         ]
 
 
@@ -173,7 +180,7 @@ view game =
                 div []
                     [ h3 []
                         [ text <|
-                            case compare scores.player1 scores.player2 of
+                            case Scores.compare1To2 scores of
                                 LT ->
                                     "Player Two Won!!!"
 

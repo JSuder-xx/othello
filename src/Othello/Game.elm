@@ -1,33 +1,16 @@
-module Othello.Game exposing (Cell(..), Game, InteractiveCell(..), Scores, State(..), UpdateGame, scores, start, state)
+module Othello.Game exposing (Game, State(..), UpdateGame, scores, start, state)
 
-import Data.Function
+import Data.Function exposing (Thunk)
+import Data.TwoDMap as TwoDMap
 import Maybe.Extra exposing (orElseLazy)
-import Othello.Board exposing (..)
+import Othello.Board as Board exposing (Board, Position, startingBoard)
+import Othello.Cell exposing (Cell(..), InteractiveCell(..))
 import Othello.Player exposing (..)
-import StaticArray
-import StaticArray.Length as Length
-
-
-{-| A cell is either empty or currently held by a player.
--}
-type Cell
-    = Empty
-    | HeldBy Player
-
-
-{-| An interactive cell type is either actually read-only or it is an empty selectable location.
--}
-type InteractiveCell
-    = EmptySelectable UpdateGame
-    | ReadOnly Cell
+import Othello.Scores as Scores exposing (Scores)
 
 
 type alias InternalGameState =
     ( Board Cell, Player )
-
-
-type alias Scores =
-    { player1 : Int, player2 : Int }
 
 
 type Game
@@ -37,14 +20,14 @@ type Game
 {-| A thunk that returns an updated game.
 -}
 type alias UpdateGame =
-    () -> Game
+    Thunk Game
 
 
 {-| Each case consists of a record of actions appropriate to that case; hypermedia style.
 -}
 type State
     = InProgress
-        { board : Board InteractiveCell
+        { board : Board (InteractiveCell Game)
         , player : Player
         , revertMaybe : Maybe UpdateGame
         }
@@ -58,74 +41,7 @@ type State
 -}
 start : Game
 start =
-    let
-        eightArray =
-            StaticArray.initialize Length.eight
-
-        emptyRow : Row Cell
-        emptyRow =
-            eightArray <| always Empty
-
-        eightArrayEEEABEEE e a b =
-            eightArray
-                (\index ->
-                    if (index <= 2) || (index >= 5) then
-                        e
-
-                    else if index == 3 then
-                        a
-
-                    else
-                        b
-                )
-
-        p1p2Row =
-            eightArrayEEEABEEE Empty (HeldBy Player1) (HeldBy Player2)
-
-        p2p1Row =
-            eightArrayEEEABEEE Empty (HeldBy Player2) (HeldBy Player1)
-
-        startingBoard =
-            eightArrayEEEABEEE emptyRow p1p2Row p2p1Row
-    in
     Game ( ( startingBoard, Player1 ), [] )
-
-
-isEmptySelectable : InteractiveCell -> Bool
-isEmptySelectable c =
-    case c of
-        EmptySelectable _ ->
-            True
-
-        _ ->
-            False
-
-
-flippablePositions : { currentPlayer : Player, fromPosition : BoardPosition, board : Board Cell } -> BoardDelta -> List BoardPosition
-flippablePositions { currentPlayer, fromPosition, board } delta =
-    let
-        get =
-            Data.Function.flip getPosition board
-
-        recurse : List BoardPosition -> Maybe BoardPosition -> List BoardPosition
-        recurse acc posMaybe =
-            case posMaybe of
-                Nothing ->
-                    []
-
-                Just newPosition ->
-                    case get newPosition of
-                        Empty ->
-                            []
-
-                        HeldBy p ->
-                            if p == currentPlayer then
-                                acc
-
-                            else
-                                recurse (newPosition :: acc) (deltaPosition delta newPosition)
-    in
-    recurse [] (deltaPosition delta fromPosition)
 
 
 state : Game -> State
@@ -146,35 +62,34 @@ state ((Game ( ( board, currentPlayer ) as currentState, historicalStates )) as 
         revert =
             revertMaybe |> Maybe.withDefault (always game)
 
-        mapCell : BoardPosition -> Cell -> InteractiveCell
-        mapCell position cell =
-            case cell of
-                HeldBy _ ->
-                    ReadOnly cell
+        attemptInProgressStateForPlayer player =
+            let
+                boardFromPlayingPosition =
+                    Board.boardFromPlayingPosition { withPlayer = player, board = board }
 
-                Empty ->
-                    case List.concatMap (flippablePositions { currentPlayer = currentPlayer, fromPosition = position, board = board }) deltas of
-                        [] ->
+                interactiveCell : Position -> Cell -> InteractiveCell Game
+                interactiveCell position cell =
+                    case cell of
+                        HeldBy _ ->
                             ReadOnly cell
 
-                        positions ->
-                            EmptySelectable <|
-                                always <|
-                                    let
-                                        newBoard =
-                                            (position :: positions) |> List.foldl (Data.Function.flip setPosition (HeldBy currentPlayer)) board
-                                    in
-                                    Game ( ( newBoard, otherPlayer ), currentState :: historicalStates )
+                        Empty ->
+                            case boardFromPlayingPosition position of
+                                Nothing ->
+                                    ReadOnly cell
 
-        inProgressStateForPlayer player =
-            let
-                newBoard =
-                    mapPosition mapCell board
+                                Just boardAfterMove ->
+                                    EmptySelectable <|
+                                        always <|
+                                            Game ( ( boardAfterMove, otherPlayer ), currentState :: historicalStates )
+
+                interactiveBoard =
+                    TwoDMap.indexedMap interactiveCell board
             in
-            if anyCell isEmptySelectable newBoard then
+            if Board.hasMove interactiveBoard then
                 Just <|
                     InProgress
-                        { board = newBoard
+                        { board = interactiveBoard
                         , player = player
                         , revertMaybe = revertMaybe
                         }
@@ -182,27 +97,21 @@ state ((Game ( ( board, currentPlayer ) as currentState, historicalStates )) as 
             else
                 Nothing
     in
-    (inProgressStateForPlayer currentPlayer |> orElseLazy (\_ -> inProgressStateForPlayer otherPlayer))
+    (attemptInProgressStateForPlayer currentPlayer |> orElseLazy (\_ -> attemptInProgressStateForPlayer otherPlayer))
         |> Maybe.withDefault (GameOver { board = board, revert = revert })
 
 
 scores : Game -> Scores
 scores (Game ( ( board, _ ), _ )) =
     let
-        foldCell cell totals =
+        scoreTransform cell =
             case cell of
                 Empty ->
-                    totals
+                    identity
 
                 HeldBy p ->
-                    case p of
-                        Player1 ->
-                            { totals | player1 = totals.player1 + 1 }
-
-                        Player2 ->
-                            { totals | player2 = totals.player2 + 1 }
-
-        foldRow row totals =
-            row |> StaticArray.toList |> List.foldl foldCell totals
+                    Scores.incPlayer p
     in
-    board |> StaticArray.toList |> List.foldl foldRow { player1 = 0, player2 = 0 }
+    board
+        |> TwoDMap.flatList
+        |> List.foldl scoreTransform Scores.initial

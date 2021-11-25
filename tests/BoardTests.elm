@@ -1,14 +1,15 @@
 module BoardTests exposing (..)
 
+import Data.TwoDMap as TwoDMap
 import Expect
-import Othello.Board as Board exposing (Board, BoardDelta)
+import Othello.Board as Board exposing (Board, Delta)
 import StaticArray
 import StaticArray.Index as Index exposing (Index)
 import StaticArray.Length as Length
 import Test exposing (..)
 
 
-origin : Board.BoardPosition
+origin : Board.Position
 origin =
     ( Index.first, Index.first )
 
@@ -23,22 +24,22 @@ increase =
     Index.increase Length.eight
 
 
-left : BoardDelta
+left : Delta
 left =
     ( Just, Index.decrease )
 
 
-right : BoardDelta
+right : Delta
 right =
     ( Just, increase )
 
 
-up : BoardDelta
+up : Delta
 up =
     ( Index.decrease, Just )
 
 
-down : BoardDelta
+down : Delta
 down =
     ( increase, Just )
 
@@ -48,10 +49,10 @@ suite =
     describe "Board" <|
         case Index.range Length.eight of
             [ one, two, three, four, five, _, seven, eight ] ->
-                [ describe "deltaPosition" <|
+                [ describe "delta" <|
                     let
                         expectPosition delta position expected _ =
-                            case Board.deltaPosition delta position of
+                            case TwoDMap.deltaPosition delta position of
                                 Just actual ->
                                     Expect.equal actual expected
 
@@ -59,7 +60,7 @@ suite =
                                     Expect.fail "Expected"
 
                         expectFailed delta position _ =
-                            case Board.deltaPosition delta position of
+                            case TwoDMap.deltaPosition delta position of
                                 Just _ ->
                                     Expect.fail "Did not expect a value"
 
@@ -84,7 +85,7 @@ suite =
                 , describe "getPosition" <|
                     let
                         expectPosition boardPosition value _ =
-                            Expect.equal (Board.getPosition boardPosition board) value
+                            Expect.equal (TwoDMap.cell boardPosition board) value
                     in
                     [ test "(1, 1)" <|
                         expectPosition ( one, one ) ( 0, 0 )
@@ -96,7 +97,7 @@ suite =
                 , describe "mapPosition" <|
                     let
                         expectLocations map position expectedValue _ =
-                            Expect.equal (Board.getPosition position (Board.mapPosition map board)) expectedValue
+                            Expect.equal (TwoDMap.cell position (TwoDMap.indexedMap map board)) expectedValue
 
                         flip ( row, col ) _ =
                             ( Index.toInt row, Index.toInt col )
@@ -109,7 +110,7 @@ suite =
                 , describe "setPosition" <|
                     let
                         expectPosition boardPosition value _ =
-                            Expect.equal (Board.setPosition boardPosition value board |> Board.getPosition boardPosition) value
+                            Expect.equal (TwoDMap.updateCell boardPosition value board |> TwoDMap.cell boardPosition) value
                     in
                     [ test "(1, 1)" <|
                         expectPosition ( one, one ) ( 3, 5 )

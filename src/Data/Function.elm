@@ -1,4 +1,8 @@
-module Data.Function exposing (flip)
+module Data.Function exposing (Thunk, flip)
+
+
+type alias Thunk a =
+    () -> a
 
 
 flip : (a -> b -> c) -> (b -> a -> c)
