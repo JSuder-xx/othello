@@ -10,7 +10,7 @@ import Othello.Scores as Scores exposing (Scores)
 
 
 type alias InternalGameState =
-    ( Board Cell, Player )
+    ( Board Cell, Maybe (Board (InteractiveCell Game)), Player )
 
 
 type Game
@@ -41,11 +41,11 @@ type State
 -}
 start : Game
 start =
-    Game ( ( startingBoard, Player1 ), [] )
+    Game ( ( startingBoard, Nothing, Player1 ), [] )
 
 
 state : Game -> State
-state ((Game ( ( board, currentPlayer ) as currentState, historicalStates )) as game) =
+state ((Game ( ( board, previewBoardMaybe, currentPlayer ) as currentState, historicalStates )) as game) =
     let
         otherPlayer =
             togglePlayer currentPlayer
@@ -64,24 +64,75 @@ state ((Game ( ( board, currentPlayer ) as currentState, historicalStates )) as 
 
         attemptInProgressStateForPlayer player =
             let
-                boardFromPlayingPosition =
-                    Board.boardFromPlayingPosition { withPlayer = player, board = board }
+                flippablePositionsFrom =
+                    Board.flippablePositionsFrom { withPlayer = player, board = board }
+
+                setCurrentPlayerAtPosition =
+                    Data.Function.flip TwoDMap.updateCell (HeldBy player)
+
+                previewInteractiveCell boardAfterMove movePosition futureFlippedPositions position cell =
+                    let
+                        considerOtherCell _ =
+                            case cell of
+                                HeldBy _ ->
+                                    Game ( ( board, Nothing, player ), historicalStates )
+
+                                Empty ->
+                                    case flippablePositionsFrom position of
+                                        [] ->
+                                            Game ( ( board, Nothing, player ), historicalStates )
+
+                                        positions ->
+                                            let
+                                                previewMap =
+                                                    previewInteractiveCell ((position :: positions) |> List.foldl setCurrentPlayerAtPosition board) position positions
+                                            in
+                                            Game ( ( board, Just (TwoDMap.indexedMap previewMap board), player ), historicalStates )
+                    in
+                    if movePosition == position then
+                        EmptySelectable
+                            { consider =
+                                always <|
+                                    Game ( ( board, Nothing, player ), historicalStates )
+                            , select =
+                                always <|
+                                    Game ( ( boardAfterMove, Nothing, otherPlayer ), currentState :: historicalStates )
+                            }
+
+                    else
+                        ReadOnly
+                            { cell = cell
+                            , marked = List.member position futureFlippedPositions
+                            , consider = considerOtherCell
+                            }
 
                 interactiveCell : Position -> Cell -> InteractiveCell Game
                 interactiveCell position cell =
                     case cell of
                         HeldBy _ ->
-                            ReadOnly cell
+                            ReadOnly { cell = cell, marked = False, consider = always game }
 
                         Empty ->
-                            case boardFromPlayingPosition position of
-                                Nothing ->
-                                    ReadOnly cell
+                            case flippablePositionsFrom position of
+                                [] ->
+                                    ReadOnly { cell = cell, marked = False, consider = always game }
 
-                                Just boardAfterMove ->
-                                    EmptySelectable <|
-                                        always <|
-                                            Game ( ( boardAfterMove, otherPlayer ), currentState :: historicalStates )
+                                positions ->
+                                    let
+                                        boardAfterMove =
+                                            (position :: positions) |> List.foldl setCurrentPlayerAtPosition board
+
+                                        previewBoard =
+                                            TwoDMap.indexedMap (previewInteractiveCell boardAfterMove position positions) board
+                                    in
+                                    EmptySelectable
+                                        { consider =
+                                            always <|
+                                                Game ( ( board, Just previewBoard, player ), historicalStates )
+                                        , select =
+                                            always <|
+                                                Game ( ( boardAfterMove, Nothing, otherPlayer ), currentState :: historicalStates )
+                                        }
 
                 interactiveBoard =
                     TwoDMap.indexedMap interactiveCell board
@@ -97,12 +148,21 @@ state ((Game ( ( board, currentPlayer ) as currentState, historicalStates )) as 
             else
                 Nothing
     in
-    (attemptInProgressStateForPlayer currentPlayer |> orElseLazy (\_ -> attemptInProgressStateForPlayer otherPlayer))
-        |> Maybe.withDefault (GameOver { board = board, revert = revert })
+    case previewBoardMaybe of
+        Just interactiveBoard ->
+            InProgress
+                { board = interactiveBoard
+                , player = currentPlayer
+                , revertMaybe = revertMaybe
+                }
+
+        Nothing ->
+            (attemptInProgressStateForPlayer currentPlayer |> orElseLazy (\_ -> attemptInProgressStateForPlayer otherPlayer))
+                |> Maybe.withDefault (GameOver { board = board, revert = revert })
 
 
 scores : Game -> Scores
-scores (Game ( ( board, _ ), _ )) =
+scores (Game ( ( board, _, _ ), _ )) =
     let
         scoreTransform cell =
             case cell of

@@ -1,4 +1,4 @@
-module Othello.Board exposing (Board, BoardDimension, Delta, Position, boardFromPlayingPosition, deltas, hasMove, startingBoard)
+module Othello.Board exposing (Board, BoardDimension, Delta, Position, deltas, flippablePositionsFrom, hasMove, startingBoard)
 
 import Data.Function
 import Data.TwoDMap as TwoDMap exposing (TwoDMap)
@@ -61,12 +61,9 @@ deltas =
     TwoDMap.deltas Length.eight
 
 
-boardFromPlayingPosition : { withPlayer : Player, board : Board Cell } -> Position -> Maybe (Board Cell)
-boardFromPlayingPosition { withPlayer, board } fromPosition =
+flippablePositionsFrom : { withPlayer : Player, board : Board Cell } -> Position -> List Position
+flippablePositionsFrom { withPlayer, board } fromPosition =
     let
-        setCurrentPlayerAtPosition =
-            Data.Function.flip TwoDMap.updateCell (HeldBy withPlayer)
-
         flippablePositions movingInDirection =
             let
                 cellAtPosition =
@@ -95,12 +92,7 @@ boardFromPlayingPosition { withPlayer, board } fromPosition =
             in
             recurse [] (move fromPosition)
     in
-    case deltas |> List.concatMap flippablePositions of
-        [] ->
-            Nothing
-
-        positions ->
-            Just ((fromPosition :: positions) |> List.foldl setCurrentPlayerAtPosition board)
+    deltas |> List.concatMap flippablePositions
 
 
 hasMove : Board (InteractiveCell a) -> Bool

@@ -14,8 +14,8 @@ type Cell
 {-| An interactive cell type is either actually read-only or it is an empty selectable location.
 -}
 type InteractiveCell a
-    = EmptySelectable (Thunk a)
-    | ReadOnly Cell
+    = EmptySelectable { consider : Thunk a, select : Thunk a }
+    | ReadOnly { cell : Cell, marked : Bool, consider : Thunk a }
 
 
 {-| Is this an empty-selectable cell?

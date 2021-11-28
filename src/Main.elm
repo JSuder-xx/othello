@@ -3,7 +3,7 @@ module Main exposing (..)
 import Browser
 import Html exposing (Html, a, div, h3, span, text)
 import Html.Attributes exposing (style)
-import Html.Events exposing (onClick)
+import Html.Events exposing (onClick, onMouseEnter)
 import Html.Keyed as Keyed
 import Othello.Board exposing (Board)
 import Othello.Cell exposing (Cell(..), InteractiveCell(..))
@@ -39,8 +39,13 @@ contentsSize =
     "48px"
 
 
-basicCellView : (a -> Html UpdateGame) -> a -> Html UpdateGame
-basicCellView contentsView contents =
+tileColor : String
+tileColor =
+    "#060"
+
+
+tileView : (a -> Html UpdateGame) -> a -> Html UpdateGame
+tileView contentsView contents =
     span
         [ style "width" cellSize
         , style "height" cellSize
@@ -49,7 +54,7 @@ basicCellView contentsView contents =
         , style "border-left" "solid 1px #131"
         , style "border-right" "solid 1px #353"
         , style "border-bottom" "solid 1px #353"
-        , style "background-color" "#060"
+        , style "background-color" tileColor
         , style "margin-right" "1px"
         , style "margin-bottom" "1px"
         , style "padding" "8px"
@@ -61,29 +66,45 @@ basicCellView contentsView contents =
         ]
 
 
-tileView : String -> Maybe msg -> Html msg
-tileView color clickMaybe =
+discView : String -> { marked : Bool, hover : msg, selectMaybe : Maybe msg } -> Html msg
+discView color { marked, hover, selectMaybe } =
+    let
+        dimension =
+            if marked then
+                "calc(100% - 6px)"
+
+            else
+                "100%"
+    in
     div
         (List.concat
-            [ clickMaybe |> Maybe.map (onClick >> List.singleton) |> Maybe.withDefault []
-            , [ style "width" "100%"
-              , style "height" "100%"
+            [ selectMaybe |> Maybe.map (onClick >> List.singleton) |> Maybe.withDefault []
+            , [ hover |> onMouseEnter
+              , style "width" dimension
+              , style "height" dimension
               , style "border-radius" "50%"
               , style "background-color" color
+              , style "border"
+                    (if marked then
+                        "solid 3px #22a"
+
+                     else
+                        "0"
+                    )
               ]
             ]
         )
         []
 
 
-cellContentsView : Cell -> Html msg
-cellContentsView cell =
+cellContentsView : Bool -> UpdateGame -> Cell -> Html UpdateGame
+cellContentsView marked hover cell =
     case cell of
         Empty ->
-            text ""
+            discView tileColor { marked = False, hover = hover, selectMaybe = Nothing }
 
         HeldBy player ->
-            tileView
+            discView
                 (case player of
                     Player1 ->
                         "black"
@@ -91,12 +112,12 @@ cellContentsView cell =
                     Player2 ->
                         "white"
                 )
-                Nothing
+                { marked = marked, hover = hover, selectMaybe = Nothing }
 
 
-cellView : Cell -> Html UpdateGame
+cellView : UpdateGame -> Cell -> Html UpdateGame
 cellView =
-    basicCellView cellContentsView
+    cellContentsView False >> tileView
 
 
 interactiveCellView : InteractiveCell Game -> Html UpdateGame
@@ -104,13 +125,13 @@ interactiveCellView =
     let
         interactiveCellContentsView interactiveCell =
             case interactiveCell of
-                ReadOnly cell ->
-                    cellContentsView cell
+                ReadOnly { cell, consider, marked } ->
+                    cellContentsView marked consider cell
 
-                EmptySelectable gameUpdate ->
-                    tileView "#aaa" (Just gameUpdate)
+                EmptySelectable { consider, select } ->
+                    discView "#aaa" { marked = False, selectMaybe = Just select, hover = consider }
     in
-    basicCellView interactiveCellContentsView
+    tileView interactiveCellContentsView
 
 
 keyedStaticArray : (a -> b) -> StaticArray n a -> List ( String, b )
@@ -166,7 +187,7 @@ view game =
         scores =
             Othello.Game.scores game
     in
-    div [ style "padding" "6px" ]
+    div [ style "padding" "8px" ]
         [ case Othello.Game.state game of
             InProgress { board, player, revertMaybe } ->
                 div []
@@ -191,7 +212,7 @@ view game =
                                     "DRAW!!!"
                         ]
                     , undoView revert
-                    , boardView board cellView
+                    , boardView board (cellView (always game))
                     ]
         , scoresView scores
         ]
